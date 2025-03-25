@@ -1,7 +1,0 @@
-{
-  "defaultSchema": "event_monitoring",
-  "assertionSchema": "event_monitoring_assertions",
-  "warehouse": "bigquery",
-  "defaultDatabase": "measure-monitor",
-  "defaultLocation": "US"
-}
