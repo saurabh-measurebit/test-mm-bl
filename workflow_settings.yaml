@@ -1,5 +1,6 @@
-defaultSchema: event_monitoring
-assertionSchema: event_monitoring_assertions
-warehouse: bigquery
-defaultDatabase: measure-monitor
-defaultLocation: US
+# Dataform workflow settings
+dataformCoreVersion: 2.0.0
+defaultProject: gtm-tlws88nt-yjy2m  # Your Google Cloud project ID
+defaultDataset: event_monitoring  # Default dataset (schema)
+defaultLocation: US  # BigQuery location
+assertionDataset: event_monitoring_assertions  # Dataset for assertions
