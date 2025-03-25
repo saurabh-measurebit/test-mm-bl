@@ -1,0 +1,108 @@
+config {
+  type: "table",
+  description: "Detects anomalies in event counts based on historical data",
+  dependencies: ["event_counts"],
+  tags: ["bosslaser", "event_monitoring", "anomaly_detection"]
+}
+
+-- Import the client configuration
+js {
+  const config = require("./bosslaser_config");
+  const clientConfig = config.clientConfig;
+  const datasetId = config.datasetId;
+}
+
+-- Get current event counts
+WITH current_counts AS (
+  SELECT * FROM ${ref("event_counts")}
+),
+
+-- Get historical data for the past 30 days
+historical_data AS (
+  SELECT
+    event_name,
+    AVG(event_count) as avg_count,
+    STDDEV(event_count) as stddev_count
+  FROM
+    ${ref(datasetId)}.events_*,
+    UNNEST(event_params) as params
+  WHERE
+    _TABLE_SUFFIX BETWEEN 
+      FORMAT_DATE('%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)) 
+      AND FORMAT_DATE('%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY))
+    AND event_name IN (${clientConfig.events_list.map(e => `'${e}'`).join(', ')})
+  GROUP BY
+    event_name
+),
+
+-- Apply event-specific thresholds
+event_thresholds AS (
+  SELECT
+    event_name,
+    CASE
+      WHEN event_name = 'purchase' THEN ${clientConfig.event_configs.purchase.threshold_percentage}
+      WHEN event_name = 'quote_created' THEN ${clientConfig.event_configs.quote_created.threshold_percentage}
+      ELSE ${clientConfig.threshold_percentage}
+    END as threshold_percentage,
+    CASE
+      WHEN event_name = 'purchase' THEN ${clientConfig.event_configs.purchase.std_dev_multiplier}
+      WHEN event_name = 'quote_created' THEN ${clientConfig.event_configs.quote_created.std_dev_multiplier}
+      ELSE ${clientConfig.std_dev_multiplier}
+    END as std_dev_multiplier,
+    CASE
+      WHEN event_name = 'purchase' THEN ${clientConfig.event_configs.purchase.min_average}
+      WHEN event_name = 'quote_created' THEN ${clientConfig.event_configs.quote_created.min_average}
+      ELSE ${clientConfig.min_average}
+    END as min_average
+  FROM
+    historical_data
+)
+
+-- Detect anomalies
+SELECT
+  c.event_name,
+  c.event_count,
+  c.event_date,
+  h.avg_count,
+  h.stddev_count,
+  t.threshold_percentage,
+  t.std_dev_multiplier,
+  t.min_average,
+  -- Calculate threshold values
+  GREATEST(
+    h.avg_count * (1 - t.threshold_percentage / 100),
+    h.avg_count - (h.stddev_count * t.std_dev_multiplier)
+  ) as lower_threshold,
+  -- Determine if there's an anomaly
+  CASE
+    WHEN h.avg_count < t.min_average THEN FALSE  -- Skip if average is too low
+    WHEN c.event_count < GREATEST(
+      h.avg_count * (1 - t.threshold_percentage / 100),
+      h.avg_count - (h.stddev_count * t.std_dev_multiplier)
+    ) THEN TRUE
+    ELSE FALSE
+  END as is_anomaly,
+  -- Create alert message
+  CASE
+    WHEN h.avg_count < t.min_average THEN NULL  -- No alert if average is too low
+    WHEN c.event_count < GREATEST(
+      h.avg_count * (1 - t.threshold_percentage / 100),
+      h.avg_count - (h.stddev_count * t.std_dev_multiplier)
+    ) THEN CONCAT(
+      'ALERT: ', c.event_name, ' count (', CAST(c.event_count AS STRING), 
+      ') is below threshold (', 
+      CAST(GREATEST(
+        h.avg_count * (1 - t.threshold_percentage / 100),
+        h.avg_count - (h.stddev_count * t.std_dev_multiplier)
+      ) AS STRING), 
+      '). Average is ', CAST(h.avg_count AS STRING)
+    )
+    ELSE NULL
+  END as alert_message,
+  CURRENT_TIMESTAMP() as detection_time
+FROM
+  current_counts c
+JOIN
+  historical_data h ON c.event_name = h.event_name
+JOIN
+  event_thresholds t ON c.event_name = t.event_name

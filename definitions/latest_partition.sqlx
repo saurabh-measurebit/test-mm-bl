@@ -1,0 +1,14 @@
+config {
+  type: "table",
+  description: "Gets the latest partition for the GA events table",
+  tags: ["bosslaser", "event_monitoring"]
+}
+
+WITH year_data AS (
+  SELECT 
+    EXTRACT(YEAR FROM CURRENT_DATE()) as year
+)
+SELECT
+  MAX(_TABLE_SUFFIX) as last_partition
+FROM
+  ${ref("analytics_308825090")}.events_${year_data.year}*

@@ -1,0 +1,23 @@
+# Node.js dependencies
+node_modules/
+
+# Dataform cache
+.dataform/
+
+# Environment variables
+.env
+
+# IDE files
+.vscode/
+.idea/
+
+# Mac OS files
+.DS_Store
+
+# Log files
+*.log
+
+# Terraform files
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup

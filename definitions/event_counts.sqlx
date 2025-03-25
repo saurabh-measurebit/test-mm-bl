@@ -1,0 +1,48 @@
+config {
+  type: "table",
+  description: "Gets event counts for all monitored events",
+  dependencies: ["latest_partition"],
+  tags: ["bosslaser", "event_monitoring"]
+}
+
+-- Import the client configuration
+js {
+  const config = require("./bosslaser_config");
+  const clientConfig = config.clientConfig;
+  const datasetId = config.datasetId;
+}
+
+-- Get the latest partition
+WITH latest_partition AS (
+  SELECT last_partition 
+  FROM ${ref("latest_partition")}
+),
+-- Convert partition to date
+partition_date AS (
+  SELECT 
+    PARSE_DATE('%m%d', last_partition) as date,
+    last_partition
+  FROM latest_partition
+),
+-- Calculate the current year
+year_data AS (
+  SELECT 
+    EXTRACT(YEAR FROM CURRENT_DATE()) as year
+)
+
+-- Query for event counts
+SELECT
+  event_name,
+  COUNT(*) as event_count,
+  CURRENT_TIMESTAMP() as timestamp,
+  partition_date.date as event_date
+FROM
+  ${ref(datasetId)}.events_${year_data.year}*,
+  UNNEST(event_params) as params,
+  partition_date
+WHERE
+  _TABLE_SUFFIX = partition_date.last_partition
+  AND event_name IN (${clientConfig.events_list.map(e => `'${e}'`).join(', ')})
+GROUP BY
+  event_name, 
+  partition_date.date
